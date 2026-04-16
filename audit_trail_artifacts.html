@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BFI Data Partnership Portal — Audit Trail Artifacts</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ========== CSS CUSTOM PROPERTIES (matching portal) ========== */
+:root {
+  --primary: #1e3a5f;
+  --primary-hover: #15294a;
+  --secondary: #2c7be5;
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b7280;
+  --border: #e2e8f0;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --info-bg: #eff6ff;
+  --warning-bg: #fffbeb;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.12);
+  --transition: 200ms ease;
+}
+
+/* ========== RESET / BASE ========== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  color: var(--text-primary);
+  background: var(--bg);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ========== NAV (matching portal) ========== */
+.navbar {
+  background: var(--primary);
+  color: white;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.nav-logo {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.nav-logo span { opacity: 0.7; font-weight: 400; }
+.nav-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.nav-user {
+  font-size: 13px;
+  color: rgba(255,255,255,0.9);
+}
+.nav-user strong { font-weight: 600; }
+
+/* ========== CONTEXT BANNER ========== */
+.context-banner {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+}
+.context-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.context-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.context-badge.tier {
+  background: var(--info-bg);
+  border-color: #bfdbfe;
+  color: var(--secondary);
+}
+.context-badge.status-active {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: var(--success);
+}
+.context-badge.status-active::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.context-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.context-id {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* ========== TAB NAV ========== */
+.tab-nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.tab-nav-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  gap: 0;
+  min-width: max-content;
+}
+.tab-btn {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 12px 16px;
+  border-bottom: 2px solid transparent;
+  transition: all var(--transition);
+  white-space: nowrap;
+  position: relative;
+}
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active {
+  color: var(--secondary);
+  border-bottom-color: var(--secondary);
+}
+.tab-btn.placeholder {
+  color: #c4c9d4;
+  cursor: default;
+}
+.tab-btn.placeholder:hover { color: #c4c9d4; }
+.tab-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 6px;
+  font-weight: 600;
+}
+.tab-badge.count {
+  background: var(--secondary);
+  color: white;
+}
+.tab-badge.soon {
+  background: var(--border);
+  color: var(--text-secondary);
+}
+
+/* ========== CONTENT AREA ========== */
+.content-area {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ========== CARDS ========== */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  margin-bottom: 16px;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.card-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ========== CHANGELOG ITEMS ========== */
+.changelog-entry {
+  border-left: 3px solid var(--border);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  transition: all var(--transition);
+  position: relative;
+}
+.changelog-entry:hover {
+  background: var(--info-bg);
+  border-left-color: var(--secondary);
+}
+.changelog-entry.agency { border-left-color: var(--warning); }
+.changelog-entry.bfi { border-left-color: var(--secondary); }
+.changelog-entry.system { border-left-color: var(--text-secondary); }
+
+.entry-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.entry-author {
+  font-weight: 600;
+  font-size: 13px;
+}
+.entry-role {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+.entry-role.agency { background: #fef3c7; color: #92400e; }
+.entry-role.bfi { background: #dbeafe; color: #1e40af; }
+.entry-role.system { background: #e5e7eb; color: #374151; }
+
+.entry-timestamp {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+.entry-section {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--secondary);
+  margin-bottom: 4px;
+}
+.entry-body {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+.entry-diff {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  line-height: 1.8;
+}
+.diff-old {
+  text-decoration: line-through;
+  color: var(--danger);
+  background: #fef2f2;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+.diff-new {
+  color: var(--success);
+  background: #f0fdf4;
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-weight: 500;
+}
+
+/* ========== AMENDMENT LOG ========== */
+.amendment-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.amendment-header {
+  background: var(--surface);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.amendment-header:hover { background: var(--info-bg); }
+.amendment-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.amendment-title { font-weight: 600; font-size: 14px; flex: 1; }
+.amendment-date { font-size: 12px; color: var(--text-secondary); }
+.amendment-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.amendment-status.executed { background: #dcfce7; color: #166534; }
+.amendment-status.pending { background: #fef3c7; color: #92400e; }
+.amendment-body {
+  padding: 16px 20px;
+  background: #fafbfc;
+  font-size: 13px;
+  line-height: 1.7;
+  display: none;
+}
+.amendment-body.open { display: block; }
+.amendment-body .field-label {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  margin-top: 12px;
+}
+.amendment-body .field-label:first-child { margin-top: 0; }
+.amendment-body .field-value { margin-bottom: 8px; }
+
+/* ========== PLACEHOLDER STATE ========== */
+.placeholder-state {
+  text-align: center;
+  padding: 60px 24px;
+  color: var(--text-secondary);
+}
+.placeholder-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.4;
+}
+.placeholder-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.placeholder-desc {
+  font-size: 13px;
+  max-width: 400px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+.placeholder-fields {
+  margin-top: 20px;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #9ca3af;
+  background: #f9fafb;
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+}
+
+/* ========== SUMMARY STRIP ========== */
+.summary-strip {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.summary-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  flex: 1;
+  min-width: 140px;
+  box-shadow: var(--shadow);
+}
+.summary-stat .label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.summary-stat .value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+.summary-stat .value.blue { color: var(--secondary); }
+.summary-stat .value.green { color: var(--success); }
+.summary-stat .value.amber { color: var(--warning); }
+
+/* ========== FILTER BAR ========== */
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.filter-chip {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  transition: all var(--transition);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.filter-chip:hover { border-color: var(--secondary); color: var(--secondary); }
+.filter-chip.active {
+  background: var(--secondary);
+  color: white;
+  border-color: var(--secondary);
+}
+</style>
+</head>
+<body>
+
+<!-- ========== NAVBAR ========== -->
+<nav class="navbar">
+  <div class="nav-logo">BFI <span>Data Partnership Portal</span></div>
+  <div class="nav-right">
+    <span class="nav-user"><strong>[Analyst Name]</strong> · BFI</span>
+  </div>
+</nav>
+
+<!-- ========== CONTEXT BANNER ========== -->
+<div class="context-banner">
+  <div class="context-inner">
+    <span class="context-title">[Dataset Name]</span>
+    <span class="context-id">[SOE-XXXX]</span>
+    <span class="context-badge tier">[Tier X: Classification]</span>
+    <span class="context-badge status-active">Active</span>
+  </div>
+</div>
+
+<!-- ========== TAB NAVIGATION ========== -->
+<div class="tab-nav">
+  <div class="tab-nav-inner">
+    <button class="tab-btn active" onclick="switchTab('presig')">Pre-Signature Change Log<span class="tab-badge count">7</span></button>
+    <button class="tab-btn" onclick="switchTab('amendments')">Post-Execution Amendments<span class="tab-badge count">2</span></button>
+    <button class="tab-btn placeholder" onclick="switchTab('custody')">Chain of Custody Receipt<span class="tab-badge soon">·</span></button>
+    <button class="tab-btn placeholder" onclick="switchTab('classification')">Classification Thread<span class="tab-badge soon">·</span></button>
+    <button class="tab-btn placeholder" onclick="switchTab('validation')">Validation Report<span class="tab-badge soon">·</span></button>
+    <button class="tab-btn placeholder" onclick="switchTab('transform')">Transformation Log<span class="tab-badge soon">·</span></button>
+    <button class="tab-btn placeholder" onclick="switchTab('training')">Training Authorization<span class="tab-badge soon">·</span></button>
+  </div>
+</div>
+
+<!-- ========== CONTENT ========== -->
+<div class="content-area">
+
+  <!-- ────── TAB 1: PRE-SIGNATURE CHANGE LOG ────── -->
+  <div class="tab-panel active" id="panel-presig">
+    <div class="summary-strip">
+      <div class="summary-stat">
+        <div class="label">Total Edits</div>
+        <div class="value blue">7</div>
+      </div>
+      <div class="summary-stat">
+        <div class="label">Agency Edits</div>
+        <div class="value amber">3</div>
+      </div>
+      <div class="summary-stat">
+        <div class="label">BFI Edits</div>
+        <div class="value blue">3</div>
+      </div>
+      <div class="summary-stat">
+        <div class="label">System-Generated</div>
+        <div class="value">1</div>
+      </div>
+      <div class="summary-stat">
+        <div class="label">Time to Execution</div>
+        <div class="value green">6 days</div>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <span class="filter-chip active" onclick="filterLog(this, 'all')">All</span>
+      <span class="filter-chip" onclick="filterLog(this, 'agency')">Agency</span>
+      <span class="filter-chip" onclick="filterLog(this, 'bfi')">BFI</span>
+      <span class="filter-chip" onclick="filterLog(this, 'system')">System</span>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Negotiation History — Pre-Signature Edits</span>
+        <span class="card-meta">Ordered newest → oldest</span>
+      </div>
+
+      <!-- Entry 7 -->
+      <div class="changelog-entry system" data-party="system">
+        <div class="entry-header">
+          <span class="entry-author">System</span>
+          <span class="entry-role system">Portal</span>
+          <span class="entry-timestamp">[Date + Time]</span>
+        </div>
+        <div class="entry-section">Agreement Status</div>
+        <div class="entry-body">
+          Scope of Exchange executed. Both parties signed. Agreement ID <strong>[SOE-XXXX]</strong> activated. Data transfer enabled.
+        </div>
+      </div>
+
+      <!-- Entry 6 -->
+      <div class="changelog-entry agency" data-party="agency">
+        <div class="entry-header">
+          <span class="entry-author">[Agency Contact Name]</span>
+          <span class="entry-role agency">Agency · Data Owner</span>
+          <span class="entry-timestamp">[Date + Time]</span>
+        </div>
+        <div class="entry-section">Section 9: Retention</div>
+        <div class="entry-body">
+          Accepted BFI's proposed 18-month retention term. No further changes requested.
+        </div>
+      </div>
+
+      <!-- Entry 5 -->
+      <div class="changelog-entry bfi" data-party="bfi">
+        <div class="entry-header">
+          <span class="entry-author">[BFI Steward Name]</span>
+          <span class="entry-role bfi">BFI · Data Steward</span>
+          <span class="entry-timestamp">[Date + Time]</span>
+        </div>
+        <div class="entry-section">Section 9: Retention</div>
+        <div class="entry-body">
+          Counter-proposed retention term based on model training cycle requirements.
+        </div>
+        <div class="entry-diff">
+          <span class="diff-old">[Original retention term]</span> →
+          <span class="diff-new">[Proposed retention term]</span>
+        </div>
+      </div>
+
+      <!-- Entry 4 -->
+      <div class="changelog-entry agency" data-party="agency">
+        <div class="entry-header">
+          <span class="entry-author">[Agency Contact Name]</span>
+          <span class="entry-role agency">Agency · Data Owner</span>
+          <span class="entry-timestamp">[Date + Time]</span>
+        </div>
+        <div class="entry-section">Section 9: Retention</div>
+        <div class="entry-body">
+          Requested shorter retention window to align with the agency's internal records schedule.
+        </div>
+        <div class="entry-diff">
+          <span class="diff-old">[Template default retention term]</span> →
+          <span class="diff-new">[Agency-proposed retention term]</span>
+        </div>
+      </div>
+
+      <!-- Entry 3 -->
+      <div class="changelog-entry bfi" data-party="bfi">
+        <div class="entry-header">
+          <span class="entry-author">[BFI Steward Name]</span>
+          <span class="entry-role bfi">BFI · Data Steward</span>
+          <span class="entry-timestamp">[Date + Time]</span>
+        </div>
+        <div class="entry-section">Section 8: Breach Notification</div>
+        <div class="entry-body">
+          Accepted agency's requested notification timeline. Updated breach notification window.
+        </div>
+        <div class="entry-diff">
+          <span class="diff-old">[Original notification window]</span> →
+          <span class="diff-new">[Agency-requested notification window]</span>
+        </div>
+      </div>
+
+      <!-- Entry 2 -->
+      <div class="changelog-entry agency" data-party="agency">
+        <div class="entry-header">
+          <span class="entry-author">[Agency Contact Name]</span>
+          <span class="entry-role agency">Agency · Data Owner</span>
+          <span class="entry-timestamp">[Date + Time]</span>
+        </div>
+        <div class="entry-section">Section 8: Breach Notification</div>
+        <div class="entry-body">
+          Requested tighter breach notification timeline to align with agency's internal incident response policy.
+        </div>
+        <div class="entry-diff">
+          <span class="diff-old">[Template default notification window]</span> →
+          <span class="diff-new">[Agency-requested notification window]</span>
+        </div>
+      </div>
+
+      <!-- Entry 1 -->
+      <div class="changelog-entry bfi" data-party="bfi">
+        <div class="entry-header">
+          <span class="entry-author">[BFI Steward Name]</span>
+          <span class="entry-role bfi">BFI · Data Steward</span>
+          <span class="entry-timestamp">[Date + Time]</span>
+        </div>
+        <div class="entry-section">Section 6: AI/ML Governance Overlay</div>
+        <div class="entry-body">
+          Added AI/ML authorized purpose language specifying the intended model use case. Drafted Section 6.6 post-termination model handling to select option (a): model continues with documented training provenance.
+        </div>
+        <div class="entry-diff">
+          <span class="diff-old">[Template placeholder text]</span> →
+          <span class="diff-new">[Specific AI/ML purpose and model handling terms]</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ────── TAB 2: POST-EXECUTION AMENDMENTS ────── -->
+  <div class="tab-panel" id="panel-amendments">
+    <div class="summary-strip">
+      <div class="summary-stat">
+        <div class="label">Total Amendments</div>
+        <div class="value blue">2</div>
+      </div>
+      <div class="summary-stat">
+        <div class="label">Executed</div>
+        <div class="value green">1</div>
+      </div>
+      <div class="summary-stat">
+        <div class="label">Pending Signature</div>
+        <div class="value amber">1</div>
+      </div>
+      <div class="summary-stat">
+        <div class="label">Original Effective Date</div>
+        <div class="value" style="font-size:14px">[Date]</div>
+      </div>
+    </div>
+
+    <!-- Amendment 2 -->
+    <div class="amendment-card">
+      <div class="amendment-header" onclick="toggleAmendment(this)">
+        <div class="amendment-number">2</div>
+        <span class="amendment-title">[Amendment Title — e.g., Expanded AI/ML Authorization]</span>
+        <span class="amendment-date">[Date Filed]</span>
+        <span class="amendment-status pending">Pending</span>
+      </div>
+      <div class="amendment-body">
+        <div class="field-label">Initiated By</div>
+        <div class="field-value">[Name] — [Role, Party]</div>
+
+        <div class="field-label">Sections Affected</div>
+        <div class="field-value">[e.g., Section 4 (Authorized Purpose), Section 6.1 (Purpose Limitation)]</div>
+
+        <div class="field-label">Rationale</div>
+        <div class="field-value">[Describe why the amendment is needed — e.g., BFI proposes expanding AI/ML authorization to include a new model use case not covered by the original scope.]</div>
+
+        <div class="field-label">Proposed Change</div>
+        <div class="field-value" style="font-family:'SF Mono','Fira Code',monospace; font-size:12px; background:#f9fafb; padding:8px 12px; border-radius:4px;">
+          <span class="diff-old">[Current language from the section]</span><br>
+          <span class="diff-new">[Proposed replacement language]</span>
+        </div>
+
+        <div class="field-label">Agency Review</div>
+        <div class="field-value" style="color:var(--warning);">Awaiting agency review and counter-signature</div>
+      </div>
+    </div>
+
+    <!-- Amendment 1 -->
+    <div class="amendment-card">
+      <div class="amendment-header" onclick="toggleAmendment(this)">
+        <div class="amendment-number">1</div>
+        <span class="amendment-title">[Amendment Title — e.g., Updated Governance Contact]</span>
+        <span class="amendment-date">[Date Executed]</span>
+        <span class="amendment-status executed">Executed</span>
+      </div>
+      <div class="amendment-body">
+        <div class="field-label">Initiated By</div>
+        <div class="field-value">[Name] — [Role, Party]</div>
+
+        <div class="field-label">Sections Affected</div>
+        <div class="field-value">[e.g., Section 7 (Governance Roles)]</div>
+
+        <div class="field-label">Rationale</div>
+        <div class="field-value">[Describe why — e.g., Agency Data Owner role transferred due to personnel change.]</div>
+
+        <div class="field-label">Change</div>
+        <div class="field-value" style="font-family:'SF Mono','Fira Code',monospace; font-size:12px; background:#f9fafb; padding:8px 12px; border-radius:4px;">
+          <span class="diff-old">[Previous contact name and information]</span><br>
+          <span class="diff-new">[New contact name and information]</span>
+        </div>
+
+        <div class="field-label">Signed By</div>
+        <div class="field-value">[Agency signatory] &amp; [BFI signatory] — [Date]</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── TAB 3: CHAIN OF CUSTODY RECEIPT (placeholder) ────── -->
+  <div class="tab-panel" id="panel-custody">
+    <div class="placeholder-state">
+      <div class="placeholder-icon">📦</div>
+      <div class="placeholder-title">Chain of Custody Transfer Receipt</div>
+      <div class="placeholder-desc">Generated at the Ingestion stage when a dataset transfer is verified by the BFI Data Steward. Serves as the permanent record of data transfer.</div>
+      <div class="placeholder-fields">
+        <span>file_hash · sha256</span>
+        <span>transfer_method · [HTTPS / SFTP / API]</span>
+        <span>transfer_timestamp · ISO 8601</span>
+        <span>file_size_bytes · integer</span>
+        <span>schema_match · boolean</span>
+        <span>record_count_actual · integer</span>
+        <span>receiving_steward · string</span>
+        <span>verifying_official · string (Tier 3)</span>
+        <span>disclosure_log_entry_id · string (Tier 3)</span>
+        <span>scope_of_exchange_id · SOE-XXXX</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── TAB 4: CLASSIFICATION THREAD (placeholder) ────── -->
+  <div class="tab-panel" id="panel-classification">
+    <div class="placeholder-state">
+      <div class="placeholder-icon">💬</div>
+      <div class="placeholder-title">Classification Discussion Thread</div>
+      <div class="placeholder-desc">Captures the full audit trail of how the data tier was determined during onboarding, including the portal's auto-suggestion, any disputes, overrides, and rationale from both parties.</div>
+      <div class="placeholder-fields">
+        <span>auto_suggested_tier · integer (1–3)</span>
+        <span>agency_override · boolean</span>
+        <span>final_tier · integer (1–3)</span>
+        <span>thread_messages[] · { author, role, timestamp, body }</span>
+        <span>sensitivity_inputs · { pii_present, federal_regimes, ... }</span>
+        <span>resolution_rationale · string</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── TAB 5: VALIDATION REPORT (placeholder) ────── -->
+  <div class="tab-panel" id="panel-validation">
+    <div class="placeholder-state">
+      <div class="placeholder-icon">✅</div>
+      <div class="placeholder-title">Validation Report</div>
+      <div class="placeholder-desc">Documents divergences between the received dataset and what the agency declared during onboarding. Signed off by the BFI Data Steward before data proceeds to cleaning.</div>
+      <div class="placeholder-fields">
+        <span>schema_check · { expected_columns, actual_columns, mismatches[] }</span>
+        <span>record_count_check · { declared, actual, delta_pct }</span>
+        <span>temporal_coverage · { declared_range, actual_range, gaps[] }</span>
+        <span>format_check · { declared, actual }</span>
+        <span>null_prevalence · { column, null_pct }[]</span>
+        <span>duplicate_keys · integer</span>
+        <span>encoding_issues · string[]</span>
+        <span>undisclosed_pii_detected · boolean</span>
+        <span>reclassification_triggered · boolean</span>
+        <span>steward_sign_off · { name, timestamp }</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── TAB 6: TRANSFORMATION LOG (placeholder) ────── -->
+  <div class="tab-panel" id="panel-transform">
+    <div class="placeholder-state">
+      <div class="placeholder-icon">🔄</div>
+      <div class="placeholder-title">Transformation Log</div>
+      <div class="placeholder-desc">An ordered record of every cleaning operation applied to the validated dataset. The original ingested file is preserved unmodified; cleaning produces a new derived dataset.</div>
+      <div class="placeholder-fields">
+        <span>operation_sequence · integer</span>
+        <span>operation_type · [standardize | deduplicate | reformat | impute | drop | rename]</span>
+        <span>target_columns · string[]</span>
+        <span>description · string</span>
+        <span>rows_affected · integer</span>
+        <span>before_sample · string</span>
+        <span>after_sample · string</span>
+        <span>reversible · boolean</span>
+        <span>operator · string</span>
+        <span>timestamp · ISO 8601</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── TAB 7: TRAINING AUTHORIZATION RECORD (placeholder) ────── -->
+  <div class="tab-panel" id="panel-training">
+    <div class="placeholder-state">
+      <div class="placeholder-icon">🤖</div>
+      <div class="placeholder-title">Training Authorization Record</div>
+      <div class="placeholder-desc">Required before any agency data enters a training pipeline. Jointly signed by the BFI Data Steward and AI System Operator. For Tier 3 data, the Information Security &amp; Privacy Official must additionally verify de-identification.</div>
+      <div class="placeholder-fields">
+        <span>model_purpose · string</span>
+        <span>model_architecture · string</span>
+        <span>datasets_used[] · { soe_id, tier, date_range, record_count }</span>
+        <span>training_method · [fine-tune | RAG | prompt-engineering | from-scratch]</span>
+        <span>memorization_safeguards · string</span>
+        <span>pre_deployment_eval_criteria · string</span>
+        <span>bias_review_plan · string</span>
+        <span>de_identification_verified · boolean (Tier 3)</span>
+        <span>reid_risk_assessment_id · string (Tier 3)</span>
+        <span>steward_sign_off · { name, timestamp }</span>
+        <span>ai_operator_sign_off · { name, timestamp }</span>
+        <span>privacy_official_sign_off · { name, timestamp } (Tier 3)</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function switchTab(id) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  
+  const panel = document.getElementById('panel-' + id);
+  if (panel) {
+    panel.classList.add('active');
+    // Find the button that triggered this
+    event.currentTarget.classList.add('active');
+  }
+}
+
+function filterLog(chip, party) {
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  
+  document.querySelectorAll('.changelog-entry').forEach(entry => {
+    if (party === 'all' || entry.dataset.party === party) {
+      entry.style.display = '';
+    } else {
+      entry.style.display = 'none';
+    }
+  });
+}
+
+function toggleAmendment(header) {
+  const body = header.nextElementSibling;
+  body.classList.toggle('open');
+}
+</script>
+</body>
+</html>
