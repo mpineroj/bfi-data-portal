@@ -155,6 +155,19 @@ h1, h2, h3, h4 { line-height: 1.3; }
   border: none;
 }
 .nav-logout:hover { color: white; }
+.nav-system-switch {
+  background: transparent;
+  color: rgba(255,255,255,0.8);
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: inherit;
+}
+.nav-system-switch:hover { background: rgba(255,255,255,0.1); color: white; border-color: rgba(255,255,255,0.6); }
 
 /* ========== SECONDARY NAV ========== */
 .secondary-nav {
@@ -1189,6 +1202,128 @@ const appState = {
 function $(sel) { return document.querySelector(sel); }
 function $$(sel) { return document.querySelectorAll(sel); }
 
+// ========== THREAD PROTOCOL — SHARED STORAGE SYNC ==========
+// Writes the Agency Portal's wizard state into the localStorage schema
+// consumed by bfi-system.html (the BFI Control Center).
+function syncToThreadStorage() {
+  try {
+    const THREAD_KEYS = {
+      datasets: 'thread_datasets',
+      edits: 'thread_soe_edits',
+      classification: 'thread_classification_threads',
+      events: 'thread_audit_events'
+    };
+    const read = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null') || []; } catch { return []; } };
+    const a = appState.agencyInfo;
+    const d = appState.datasetDetails;
+    const tier = appState.agreedTier || appState.suggestedTier || 2;
+    const nowIso = new Date().toISOString();
+    const soeId = `SOE-P${String(Date.now()).slice(-5)}`;
+
+    const datasets = read(THREAD_KEYS.datasets);
+    const exists = datasets.find(x => x.dataset_name === d.name && x.source === 'portal');
+    if (exists) return; // idempotent
+
+    const dataset = {
+      id: soeId,
+      dataset_name: d.name || 'Untitled Dataset',
+      description: d.description || '',
+      agency_name: a.agencyName || 'City of San Antonio',
+      agency_department: a.agencyType || '',
+      data_domains: d.domains || [],
+      geographic_scope: d.geographicScope || 'City of San Antonio',
+      temporal_start: d.temporalStart || null,
+      temporal_end: d.ongoing ? null : (d.temporalEnd || null),
+      record_count: Number(d.recordCount) || 0,
+      update_frequency: d.updateFrequency || 'One-time',
+      file_formats: d.formats || [],
+      tier: tier,
+      tier_label: { 1: 'Public', 2: 'Internal Operational', 3: 'Restricted' }[tier] || 'Internal Operational',
+      classification_rationale: appState.tierRationale || appState.agencyOverrideRationale || '',
+      authorized_purpose: d.aiUseCase || 'As declared during onboarding.',
+      ai_ml_authorized: !!d.aiMlToggle,
+      retention_term: '24 months',
+      breach_notification_hours: tier === 1 ? null : (tier === 2 ? 72 : 24),
+      roles: {
+        agency_data_owner: { name: a.primaryName || 'Agency User', contact: a.primaryEmail || '' },
+        data_custodian: { name: a.secondaryName || a.primaryName || 'Agency User', contact: a.secondaryEmail || a.primaryEmail || '' },
+        bfi_data_steward: { name: 'Dr. James Liu', contact: 'jliu@bfi.org' },
+        security_official: tier === 3 ? { name: 'Priya Rao', contact: 'prao@bfi.org' } : null,
+        ai_system_operator: d.aiMlToggle ? { name: 'Sam Chen', contact: 'schen@bfi.org' } : null,
+        authorized_users: d.aiMlToggle ? ['Sam Chen (AI Operator)'] : ['Ana Ruiz (Research Analyst)']
+      },
+      federal_regimes: d.federalRegimes || [],
+      current_stage: 'request',
+      stage_history: [{ from: null, to: 'request', timestamp: nowIso, actor: a.primaryName || 'Agency User', artifact_id: null }],
+      status: 'active',
+      created_at: nowIso,
+      updated_at: nowIso,
+      effective_date: nowIso,
+      source: 'portal'
+    };
+    datasets.push(dataset);
+    localStorage.setItem(THREAD_KEYS.datasets, JSON.stringify(datasets));
+
+    // Pre-signature edits from scopeEdits
+    const existingEdits = read(THREAD_KEYS.edits);
+    (appState.scopeEdits || []).forEach((e, i) => {
+      existingEdits.push({
+        id: `${soeId}-EDT-${String(i + 1).padStart(2, '0')}`,
+        soe_id: soeId,
+        author_name: e.author || a.primaryName || 'Agency User',
+        author_role: e.role || 'Data Owner',
+        author_party: (e.author || '').includes('BFI') ? 'bfi' : 'agency',
+        section_number: e.section || 0,
+        section_title: `Section ${e.section || '—'}`,
+        old_text: e.oldText || '—',
+        new_text: e.newText || '—',
+        rationale: e.rationale || 'Pre-signature edit during onboarding.',
+        timestamp: e.timestamp || nowIso
+      });
+    });
+    existingEdits.push({
+      id: `${soeId}-EDT-EXEC`, soe_id: soeId, author_name: 'System', author_role: 'Portal', author_party: 'system',
+      section_number: 0, section_title: 'Agreement Status', old_text: '—',
+      new_text: `Scope of Exchange executed. Both parties signed. ${soeId} activated.`,
+      rationale: 'Execution event.', timestamp: nowIso
+    });
+    localStorage.setItem(THREAD_KEYS.edits, JSON.stringify(existingEdits));
+
+    // Classification thread from discussionThread
+    const threads = read(THREAD_KEYS.classification);
+    const messages = (appState.discussionThread || []).map(m => ({
+      author: m.author || 'User',
+      role: m.roleLabel || 'User',
+      party: m.isBfi ? 'bfi' : (m.party === 'system' ? 'system' : 'agency'),
+      body: m.body || m.text || '',
+      proposed_tier: m.proposedTier || null,
+      timestamp: m.timestamp || nowIso
+    }));
+    if (!messages.length) {
+      messages.push({ author: 'System', role: 'Portal', party: 'system', body: `Portal auto-suggested Tier ${appState.suggestedTier || tier}.`, proposed_tier: appState.suggestedTier || tier, timestamp: nowIso });
+    }
+    messages.push({ author: 'System', role: 'Portal', party: 'system', body: `Tier ${tier} finalized.`, proposed_tier: tier, timestamp: nowIso });
+    threads.push({
+      thread_id: `CLS-${soeId.replace('SOE-', '')}`, soe_id: soeId,
+      auto_suggested_tier: appState.suggestedTier || tier,
+      final_tier: tier,
+      agency_override: !!appState.agencyOverrideTier && appState.agencyOverrideTier !== appState.suggestedTier,
+      messages, resolved_at: nowIso
+    });
+    localStorage.setItem(THREAD_KEYS.classification, JSON.stringify(threads));
+
+    // Audit events
+    const events = read(THREAD_KEYS.events);
+    const nextId = () => `EVT-${String(events.length + 1).padStart(5, '0')}`;
+    const baseEvent = { soe_id: soeId, dataset_name: dataset.dataset_name, artifact_id: null, metadata: {} };
+    events.unshift({ id: nextId(), timestamp: nowIso, ...baseEvent, layer: 'agency_facing', event_type: 'soe_executed', actor_name: a.primaryName || 'Agency User', actor_role: 'Agency Data Owner', description: `Scope of Exchange executed for ${soeId}. Tier ${tier}.` });
+    events.unshift({ id: nextId(), timestamp: nowIso, ...baseEvent, layer: 'control_plane', event_type: 'classification_resolved', actor_name: 'System', actor_role: 'Portal', description: `Classification resolved for ${soeId}: Tier ${tier}.`, artifact_id: `CLS-${soeId.replace('SOE-', '')}` });
+    localStorage.setItem(THREAD_KEYS.events, JSON.stringify(events));
+  } catch (err) {
+    console.error('[THREAD] sync failed', err);
+  }
+}
+
 function showToast(msg) {
   const c = document.getElementById('toast-container');
   const t = document.createElement('div');
@@ -1316,13 +1451,15 @@ function renderNav() {
   }
 
   return `
-    <div class="role-banner ${s.currentRole === 'bfi' ? 'bfi' : ''}">
-      Viewing as: ${s.currentRole === 'agency' ? 'Agency — City of San Antonio, Public Works Department' : 'BFI Reviewer — Data Stewardship Office'}
+    <div class="role-banner">
+      Viewing as: Agency — City of San Antonio, Public Works Department
     </div>
     <nav class="navbar">
       <div class="nav-logo">Better Futures Institute <span>— Data Partnership Portal</span></div>
       ${inWizard ? `<div class="nav-steps">${stepsHTML}</div>` : '<div style="flex:1"></div>'}
       <div class="nav-right">
+        <button class="nav-system-switch" onclick="resetDemoData()" title="Reset demo data and reload" style="opacity:0.75;">↺ Reset Demo</button>
+        <button class="nav-system-switch" onclick="window.location.href='bfi-system.html'" title="Demo: switch to BFI THREAD Control Center">Switch to THREAD System →</button>
         <button class="nav-bell" onclick="toggleNotifPanel()">
           Notifications${unreadCount > 0 ? '<span class="dot"></span>' : ''}
         </button>
@@ -2521,9 +2658,13 @@ function renderDashboard() {
             </thead>
             <tbody>
               ${filtered.map((ds, i) => `
-                <tr onclick="showToast('Opening dataset details for ${ds.name}...')">
+                <tr onclick="${ds.isDemoDraft ? `resumeDemoDraft('${ds.id}')` : `showToast('Opening dataset details for ${ds.name}...')`}" style="${ds.isDemoDraft ? 'cursor:pointer;' : ''}">
                   ${s.currentRole === 'bfi' ? `<td>${ds.agency || s.agencyInfo.agencyName || '—'}</td>` : ''}
-                  <td><strong>${ds.name}</strong>${ds.status === 'active' && ds.transferStatus === 'not_started' ? ' <a href="#" onclick="event.stopPropagation();navigate(\'step6\')" style="font-size:12px;font-weight:400">Upload Dataset →</a>' : ''}</td>
+                  <td>
+                    <strong>${ds.name}</strong>
+                    ${ds.isDemoDraft ? ` <a href="#" onclick="event.stopPropagation();resumeDemoDraft('${ds.id}')" style="font-size:12px;font-weight:500;color:var(--secondary);">Continue Draft →</a>` : ''}
+                    ${ds.status === 'active' && ds.transferStatus === 'not_started' ? ` <a href="#" onclick="event.stopPropagation();navigate('step6')" style="font-size:12px;font-weight:400">Upload Dataset →</a>` : ''}
+                  </td>
                   <td>${tierBadge(ds.tier)}</td>
                   <td>${statusBadge(ds.status)}</td>
                   <td>${ds.transferStatus ? transferStatusBadge(ds.transferStatus) : '—'}</td>
@@ -2558,12 +2699,6 @@ function render() {
       case 'dashboard': html += renderDashboard(); break;
       default: html += renderDashboard();
     }
-    // Role switcher
-    html += `
-      <div class="role-switcher">
-        <button class="${s.currentRole==='agency'?'active':''}" onclick="switchRole('agency')">Agency View</button>
-        <button class="${s.currentRole==='bfi'?'active':''}" onclick="switchRole('bfi')">BFI View</button>
-      </div>`;
   }
 
   document.getElementById('app').innerHTML = html;
@@ -2579,6 +2714,9 @@ function render() {
   if (s.currentScreen === 'step6' && s.transfer.secureLinkExpiry) {
     startCountdownTimer();
   }
+
+  // Persist session on every render (Mod 7 + 10)
+  try { if (typeof updatePortalSession === 'function') updatePortalSession(); } catch (e) {}
 }
 
 // ========== CANVAS DRAWING ==========
@@ -2620,33 +2758,69 @@ function clearCanvas(party) {
   }
 }
 
+// ========== SESSION PERSISTENCE (Mod 7 + 10) ==========
+const PORTAL_SESSION_KEY = 'thread_portal_session';
+function updatePortalSession() {
+  try {
+    const wizardScreens = ['step1','step2','step3','step4','step5','step6'];
+    const isWizard = wizardScreens.includes(appState.currentScreen);
+    const session = {
+      authenticated: appState.currentScreen !== 'login',
+      role: 'agency',
+      activeSubmissionId: appState.currentDraftSoeId || null,
+      activeWizardStep: isWizard ? parseInt(appState.currentScreen.replace('step','')) : null,
+      currentScreen: appState.currentScreen,
+      lastView: isWizard ? 'wizard' : 'landing'
+    };
+    localStorage.setItem(PORTAL_SESSION_KEY, JSON.stringify(session));
+  } catch (e) {}
+}
+function restorePortalSession() {
+  try {
+    const raw = localStorage.getItem(PORTAL_SESSION_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (!s || !s.authenticated) return false;
+    if (s.currentScreen && s.currentScreen !== 'login') {
+      appState.currentScreen = s.currentScreen;
+    } else {
+      appState.currentScreen = 'dashboard';
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
 // ========== EVENT HANDLERS ==========
 function doLogin() {
   appState.currentScreen = 'dashboard';
+  updatePortalSession();
   render();
 }
 
 function doLogout() {
   appState.currentScreen = 'login';
   appState.showNotifPanel = false;
+  try { localStorage.removeItem(PORTAL_SESSION_KEY); } catch (e) {}
   render();
 }
 
 function navigate(screen) {
   appState.currentScreen = screen;
   appState.showNotifPanel = false;
+  updatePortalSession();
   render();
 }
 
 function navigateStep(screen) {
   appState.currentScreen = screen;
   appState.showNotifPanel = false;
+  updatePortalSession();
   render();
 }
 
 function switchRole(role) {
-  appState.currentRole = role;
-  render();
+  // Legacy no-op — BFI view is now handled by bfi-system.html
+  appState.currentRole = 'agency';
 }
 
 function toggleNotifPanel() {
@@ -2774,7 +2948,14 @@ function saveStep2() {
     sysText += ` Agency overrode system suggestion of Tier ${appState.suggestedTier}. Rationale: "${appState.agencyOverrideRationale}"`;
   }
   appState.discussionThread = [{ author: 'System', role: 'system', roleLabel: '', timestamp: nowTimestamp(), text: sysText, isSystem: true }];
-  appState.classificationStatus = 'under_review';
+  appState.classificationStatus = appState.agencyTierDecision === 'accepted' ? 'agency_accepted' : 'agency_overrode';
+
+  // Write to shared BFI state: the BFI Ingestion tab becomes aware of this dataset as soon as Step 2 is saved.
+  const soeId = appState.currentDraftSoeId || `SOE-${String(Math.floor(Date.now() / 1000) % 10000).padStart(4, '0')}`;
+  appState.currentDraftSoeId = soeId;
+  try { if (typeof syncPortalDraftToBfi === 'function') syncPortalDraftToBfi(soeId); } catch (e) {}
+  writeSharedClassificationThread();
+
   appState.currentScreen = 'step3';
   render();
 }
@@ -2798,6 +2979,7 @@ function submitProposal() {
   appState.classificationStatus = 'bfi_proposed';
   appState.bfiProposeOpen = false;
   appState.notifications.unshift({ id: Date.now(), icon: '💬', text: `BFI proposed Tier ${tier} classification for '${appState.datasetDetails.name}'.`, time: 'Just now', read: false });
+  writeSharedClassificationThread();
   render();
 }
 
@@ -2815,6 +2997,7 @@ function postComment() {
     isPrivate: isPrivate
   });
   if (appState.classificationStatus === 'disputed') appState.disputeCount++;
+  writeSharedClassificationThread();
   render();
 }
 
@@ -2823,14 +3006,16 @@ function acceptClassification(tier) {
   appState.classificationStatus = 'agreed';
   appState.discussionThread.push({ author: 'System', role: 'system', roleLabel: '', timestamp: nowTimestamp(), text: `Agency accepted BFI's proposed classification: Tier ${tier} — ${tierName(tier)}.`, isSystem: true });
   appState.notifications.unshift({ id: Date.now(), icon: '✅', text: `Classification agreed: Tier ${tier} for '${appState.datasetDetails.name}'.`, time: 'Just now', read: false });
+  writeSharedClassificationThread();
   render();
 }
 
 function disputeClassification() {
   appState.classificationStatus = 'disputed';
-  appState.disputeCount = 1;
+  appState.disputeCount = (appState.disputeCount || 0) + 1;
   appState.discussionThread.push({ author: 'System', role: 'system', roleLabel: '', timestamp: nowTimestamp(), text: 'Agency disputed the proposed classification.', isSystem: true });
   appState.notifications.unshift({ id: Date.now(), icon: '⚠️', text: `Classification disputed for '${appState.datasetDetails.name}'.`, time: 'Just now', read: false });
+  writeSharedClassificationThread();
   render();
 }
 
@@ -2839,6 +3024,7 @@ function finalizeAgencyDetermination() {
   appState.agreedTier = effectiveTier;
   appState.classificationStatus = 'finalized';
   appState.discussionThread.push({ author: 'System', role: 'system', roleLabel: '', timestamp: nowTimestamp(), text: `Classification finalized at agency determination: Tier ${effectiveTier} — ${tierName(effectiveTier)}.`, isSystem: true });
+  writeSharedClassificationThread();
   render();
 }
 
@@ -2945,6 +3131,7 @@ function finalSubmit() {
     reviewer: 'Dr. James Liu'
   });
   appState.notifications.unshift({ id: Date.now(), icon: '✅', text: `Agreement executed for '${appState.datasetDetails.name}'.`, time: 'Just now', read: false });
+  syncToThreadStorage();
   render();
 }
 
@@ -3161,8 +3348,290 @@ document.addEventListener('click', function(e) {
   }
 });
 
+// ========== DEMO SEED ==========
+const PORTAL_SEED_KEY = 'thread_portal_seeded_v1';
+const DEMO_SOE_0045 = {
+  id: 'SOE-0045',
+  name: 'Development Permits & Capital Investment Activity 2019–2025',
+  agencyInfo: {
+    agencyName: 'City of San Antonio',
+    agencyType: 'City Department',
+    jurisdiction: 'City of San Antonio',
+    primaryName: 'Maria Castillo', primaryTitle: 'Director of Planning & Community Development', primaryEmail: 'm.castillo@sanantonio.gov', primaryPhone: '(210) 555-0142',
+    secondaryName: 'James Nguyen', secondaryTitle: 'Data Custodian', secondaryEmail: 'j.nguyen@sanantonio.gov', secondaryPhone: '(210) 555-0143',
+    showSecondary: true,
+    authSameAsPrimary: false,
+    authName: 'Maria Castillo', authTitle: 'Director', authEmail: 'm.castillo@sanantonio.gov'
+  },
+  datasetDetails: {
+    name: 'Development Permits & Capital Investment Activity 2019–2025',
+    description: 'Residential and commercial development permits, capital improvement project filings, and associated inspection outcomes across San Antonio. Includes permit type, project valuation, geographic coordinates, council district, census tract, applicant information, and approval timelines. Covers new construction, renovation, demolition, and rezoning actions.',
+    domains: ['Permitting', 'Urban Development'],
+    geographicScope: 'City of San Antonio (all 10 council districts)',
+    temporalStart: '2019-01-01',
+    temporalEnd: '',
+    ongoing: true,
+    recordCount: '145000',
+    updateFrequency: 'Monthly',
+    formats: ['CSV', 'JSON'],
+    hasDocumentation: true,
+    schemaIssues: '',
+    piiChecks: ['applicant_names', 'property_addresses', 'corporate_ownership'],
+    publishedOnPortal: 'no',
+    requiresRedaction: 'no',
+    internalOps: 'yes',
+    federalRegimes: [],
+    aiMlToggle: true,
+    aiUseCase: "Identify spatial clusters of underinvestment relative to population growth and demographic change, to support BFI's South Texas Triangle equity research and inform targeted infrastructure recommendations.",
+    aiPreviousAuth: ''
+  }
+};
+
+function seedPortalDemoIfNeeded() {
+  if (localStorage.getItem(PORTAL_SEED_KEY)) return;
+  // Add pre-loaded demo datasets to the landing list so the demo has realistic context
+  const existingNames = appState.datasets.map(d => d.name);
+  const demoRows = [
+    { id: 'SOE-0045', name: DEMO_SOE_0045.name, agency: 'City of San Antonio', tier: 2, status: 'draft', transferStatus: null, submitted: relDays(-2), signed: null, expires: null, reviewer: null, isDemoDraft: true },
+    { id: 'SOE-0042', name: 'SA Public Works Service Calls 2020–2025', agency: 'City of San Antonio', tier: 2, status: 'active', transferStatus: 'verified', submitted: relDays(-22), signed: relDays(-18), expires: relDays(365), reviewer: 'Dr. James Liu', readOnly: true },
+    { id: 'SOE-0043', name: '311 Service Requests Q1–Q4 2025', agency: 'City of San Antonio', tier: 1, status: 'active', transferStatus: 'verified', submitted: relDays(-35), signed: relDays(-32), expires: relDays(330), reviewer: 'Dr. James Liu', readOnly: true },
+    { id: 'SOE-0044', name: 'Housing Assistance & Income Verification Records', agency: 'City of San Antonio', tier: 3, status: 'active', transferStatus: 'verified', submitted: relDays(-11), signed: relDays(-8), expires: relDays(350), reviewer: 'Dr. James Liu', readOnly: true }
+  ];
+  demoRows.forEach(row => { if (!existingNames.includes(row.name)) appState.datasets.push(row); });
+  localStorage.setItem(PORTAL_SEED_KEY, '1');
+}
+
+function relDays(n) {
+  const d = new Date(); d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function resumeDemoDraft(soeId) {
+  if (soeId !== 'SOE-0045') { showToast('Draft not found'); return; }
+  appState.agencyInfo = JSON.parse(JSON.stringify(DEMO_SOE_0045.agencyInfo));
+  appState.datasetDetails = JSON.parse(JSON.stringify(DEMO_SOE_0045.datasetDetails));
+  appState.currentDraftSoeId = 'SOE-0045';
+  appState.completedSteps = [1, 2];
+  appState.currentScreen = 'step3';
+  // Trigger classification computation so Tier 2 is suggested
+  try { computeClassification(); } catch (e) {}
+  // Defaults — these are overwritten by the pre-seeded shared thread below if present
+  appState.classificationStatus = 'under_review';
+  appState.discussionThread = [];
+  syncPortalDraftToBfi('SOE-0045');
+  // Pull the pre-seeded 5-message classification thread from shared localStorage (Addendum 3)
+  refreshClassificationFromShared();
+  render();
+}
+
+// Write portal-side draft into the shared thread_* localStorage schema
+function syncPortalDraftToBfi(soeId) {
+  try {
+    const datasets = JSON.parse(localStorage.getItem('thread_datasets') || '[]');
+    const existing = datasets.find(d => d.id === soeId);
+    const a = appState.agencyInfo;
+    const d = appState.datasetDetails;
+    const tier = appState.agreedTier || appState.suggestedTier || 2;
+    const nowIso = new Date().toISOString();
+    const dataset = existing || { id: soeId };
+    Object.assign(dataset, {
+      id: soeId,
+      dataset_name: d.name || dataset.dataset_name || '',
+      description: d.description || '',
+      agency_name: a.agencyName || 'City of San Antonio',
+      agency_department: 'Department of Planning & Community Development',
+      data_domains: d.domains || [],
+      geographic_scope: d.geographicScope || '',
+      temporal_start: d.temporalStart || null,
+      temporal_end: d.ongoing ? null : (d.temporalEnd || null),
+      record_count: Number(d.recordCount) || 0,
+      update_frequency: d.updateFrequency || '',
+      file_formats: d.formats || [],
+      tier,
+      tier_label: { 1: 'Public', 2: 'Internal Operational', 3: 'Restricted' }[tier] || 'Internal Operational',
+      classification_rationale: appState.tierRationale || '',
+      authorized_purpose: d.aiUseCase || '',
+      ai_ml_authorized: !!d.aiMlToggle,
+      retention_term: dataset.retention_term || '24 months',
+      breach_notification_hours: dataset.breach_notification_hours ?? (tier === 1 ? null : (tier === 2 ? 48 : 24)),
+      roles: dataset.roles || {
+        agency_data_owner: { name: a.primaryName || '', contact: a.primaryEmail || '' },
+        data_custodian: { name: a.secondaryName || '', contact: a.secondaryEmail || '' },
+        bfi_data_steward: { name: 'Sofia Reyes', contact: 's.reyes@bfi.org' },
+        security_official: tier >= 2 ? { name: 'Daniel Okonkwo', contact: 'd.okonkwo@bfi.org' } : null,
+        ai_system_operator: d.aiMlToggle ? { name: 'Priya Mehta', contact: 'p.mehta@bfi.org' } : null,
+        authorized_users: []
+      },
+      federal_regimes: d.federalRegimes || [],
+      current_stage: dataset.current_stage || 'request',
+      stage_history: dataset.stage_history || [{ from: null, to: 'request', timestamp: nowIso, actor: a.primaryName || 'Maria Castillo', artifact_id: null }],
+      status: 'active',
+      created_at: dataset.created_at || nowIso,
+      updated_at: nowIso,
+      effective_date: dataset.effective_date || null,
+      source: 'portal',
+      soe_status: dataset.soe_status || 'draft',
+      transfer_status: dataset.transfer_status || 'not_started',
+      signatures: dataset.signatures || { bfi_steward: null, bfi_security_official: null, agency_data_owner: null, agency_custodian: null },
+      onboarding_steps_completed: Array.from(new Set([...(dataset.onboarding_steps_completed || []), 'agency_info', 'dataset_details'])),
+      onboarding_current_step: 'classification'
+    });
+    if (!existing) datasets.push(dataset);
+    localStorage.setItem('thread_datasets', JSON.stringify(datasets));
+
+    // Update onboarding progress
+    const progress = JSON.parse(localStorage.getItem('thread_onboarding_progress') || '[]');
+    let p = progress.find(x => x.soe_id === soeId);
+    if (!p) { p = { soe_id: soeId }; progress.push(p); }
+    Object.assign(p, {
+      wizard_steps_completed: dataset.onboarding_steps_completed,
+      wizard_current_step: dataset.onboarding_current_step,
+      soe_status: dataset.soe_status,
+      signatures: dataset.signatures,
+      transfer_status: dataset.transfer_status,
+      transfer_metadata: dataset.transfer_metadata || null,
+      updated_at: nowIso
+    });
+    localStorage.setItem('thread_onboarding_progress', JSON.stringify(progress));
+
+    // Seed a pending classification thread if one doesn't exist
+    const threads = JSON.parse(localStorage.getItem('thread_classification_threads') || '[]');
+    if (!threads.find(t => t.soe_id === soeId)) {
+      threads.push({
+        thread_id: 'CLS-0045', soe_id: soeId, auto_suggested_tier: tier, final_tier: null, agency_override: false,
+        resolved_at: null,
+        messages: [{ author: 'System', role: 'Portal', party: 'system', body: `Portal auto-suggested Tier ${tier} based on classification inputs.`, proposed_tier: tier, timestamp: nowIso }]
+      });
+      localStorage.setItem('thread_classification_threads', JSON.stringify(threads));
+    }
+
+    // Audit event
+    const events = JSON.parse(localStorage.getItem('thread_audit_events') || '[]');
+    events.unshift({
+      id: `EVT-${Date.now()}`, timestamp: nowIso, soe_id: soeId, dataset_name: dataset.dataset_name,
+      layer: 'agency_facing', event_type: 'dataset_details_saved',
+      actor_name: a.primaryName || 'Maria Castillo', actor_role: 'Agency Data Owner',
+      description: `New dataset registration started by ${a.primaryName || 'Maria Castillo'}. Dataset details saved; awaiting classification resolution.`,
+      artifact_id: null, metadata: {}
+    });
+    localStorage.setItem('thread_audit_events', JSON.stringify(events));
+  } catch (e) { console.warn('Portal sync failed:', e); }
+}
+
+// ========== SHARED CLASSIFICATION THREAD SYNC (Mod 8) ==========
+function _classificationThreadId(soeId) {
+  return 'CLS-' + (soeId || '').replace('SOE-', '');
+}
+
+function writeSharedClassificationThread() {
+  try {
+    const soeId = appState.currentDraftSoeId;
+    if (!soeId) return;
+    const threads = JSON.parse(localStorage.getItem('thread_classification_threads') || '[]');
+    const idx = threads.findIndex(t => t.soe_id === soeId);
+    const existing = idx >= 0 ? threads[idx] : {};
+    const status = appState.classificationStatus;
+    const thread = {
+      thread_id: existing.thread_id || _classificationThreadId(soeId),
+      soe_id: soeId,
+      auto_suggested_tier: appState.suggestedTier || existing.auto_suggested_tier || null,
+      final_tier: status === 'finalized' ? (appState.agreedTier || (appState.agencyOverrideTier ? parseInt(appState.agencyOverrideTier) : appState.suggestedTier)) : (existing.final_tier || null),
+      agency_override: appState.agencyTierDecision === 'overridden',
+      classification_status: status,
+      dispute_count: appState.disputeCount || 0,
+      agreed_tier: appState.agreedTier || null,
+      agency_tier_decision: appState.agencyTierDecision === 'overridden' ? 'overrode' : 'accepted',
+      agency_override_tier: appState.agencyOverrideTier ? parseInt(appState.agencyOverrideTier) : null,
+      agency_override_rationale: appState.agencyOverrideRationale || null,
+      messages: (appState.discussionThread || []).map((m, i) => ({
+        id: m.id || `MSG-${soeId}-${i}-${Math.floor(Math.random()*1000)}`,
+        author: m.author,
+        role: m.role,
+        roleLabel: m.roleLabel,
+        party: m.isSystem ? 'system' : (m.role === 'bfi' ? 'bfi' : 'agency'),
+        body: m.text,
+        timestamp: m.timestamp,
+        proposedTier: m.proposedTier || null,
+        isSystem: !!m.isSystem,
+        isPrivate: !!m.isPrivate
+      })),
+      resolved_at: (status === 'agreed' || status === 'finalized') ? (existing.resolved_at || new Date().toISOString()) : null
+    };
+    if (idx >= 0) threads[idx] = thread;
+    else threads.push(thread);
+    localStorage.setItem('thread_classification_threads', JSON.stringify(threads));
+  } catch (e) { console.warn('Thread sync write failed:', e); }
+}
+
+function refreshClassificationFromShared() {
+  try {
+    const soeId = appState.currentDraftSoeId;
+    if (!soeId) return;
+    const threads = JSON.parse(localStorage.getItem('thread_classification_threads') || '[]');
+    const t = threads.find(x => x.soe_id === soeId);
+    if (!t) return;
+    appState.discussionThread = (t.messages || []).map(m => ({
+      id: m.id,
+      author: m.author,
+      role: m.role,
+      roleLabel: m.roleLabel,
+      timestamp: m.timestamp,
+      text: m.body,
+      proposedTier: m.proposedTier || null,
+      isSystem: !!m.isSystem,
+      isPrivate: !!m.isPrivate
+    }));
+    if (t.classification_status) appState.classificationStatus = t.classification_status;
+    if (t.agreed_tier != null) appState.agreedTier = t.agreed_tier;
+    if (typeof t.dispute_count === 'number') appState.disputeCount = t.dispute_count;
+    if (t.agency_override_tier) appState.agencyOverrideTier = t.agency_override_tier;
+    if (t.agency_override_rationale) appState.agencyOverrideRationale = t.agency_override_rationale;
+    if (t.agency_tier_decision === 'overrode') appState.agencyTierDecision = 'overridden';
+  } catch (e) { console.warn('Thread sync read failed:', e); }
+}
+
+function resetDemoData() {
+  if (!confirm('Reset demo data? This clears all local state (wizard drafts, BFI datasets, signatures, audit events) and restores the original mock data.')) return;
+  const keys = [
+    'thread_datasets', 'thread_audit_events', 'thread_soe_edits', 'thread_amendments',
+    'thread_custody_receipts', 'thread_classification_threads', 'thread_validation_reports',
+    'thread_transformation_ops', 'thread_training_authorizations', 'thread_models',
+    'thread_onboarding_progress', 'thread_agency_notifications', 'thread_initialized',
+    'thread_bfi_seeded_v1', 'thread_bfi_seeded_v2', 'thread_bfi_seeded_v3',
+    'thread_portal_seeded_v1', 'thread_portal_state', 'thread_portal_session'
+  ];
+  keys.forEach(k => localStorage.removeItem(k));
+  location.reload();
+}
+
 // ========== INIT ==========
+seedPortalDemoIfNeeded();
+(function initPortal() {
+  const restored = restorePortalSession();
+  if (!restored) {
+    appState.currentScreen = 'login';
+  } else {
+    const wizardScreens = ['step1','step2','step3','step4','step5','step6'];
+    if (wizardScreens.includes(appState.currentScreen) && !appState.currentDraftSoeId) {
+      appState.currentScreen = 'dashboard';
+    }
+  }
+})();
+// Cross-tab / return-from-THREAD sync: re-pull shared state when the tab becomes visible
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    if (typeof refreshClassificationFromShared === 'function') refreshClassificationFromShared();
+    render();
+  }
+});
+window.addEventListener('storage', (e) => {
+  if (e.key === 'thread_classification_threads' && typeof refreshClassificationFromShared === 'function') {
+    refreshClassificationFromShared();
+    render();
+  }
+});
 render();
+updatePortalSession();
 </script>
 </body>
 </html>
