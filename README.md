@@ -1,4 +1,4 @@
-# THREAD Web Prototype
+# THREAD Prototype
 
 This repository contains a working web prototype of THREAD, anchored at BFI. The prototype is implemented as two connected single-page HTML applications that share a browser-side data model and audit log:
 
