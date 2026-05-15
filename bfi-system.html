@@ -285,9 +285,7 @@ h1, h2, h3, h4 { line-height: 1.3; }
   font-weight: 600;
   white-space: nowrap;
 }
-.badge-tier1 { background: #dbeafe; color: #1e40af; }
-.badge-tier2 { background: #fef3c7; color: #92400e; }
-.badge-tier3 { background: #fee2e2; color: #991b1b; }
+
 .badge-blue { background: #dbeafe; color: #1e40af; }
 .badge-green { background: #dcfce7; color: #166534; }
 .badge-red { background: #fee2e2; color: #991b1b; }
@@ -415,11 +413,7 @@ h1, h2, h3, h4 { line-height: 1.3; }
   align-self: flex-start;
   white-space: nowrap;
 }
-.activity-layer.agency_facing { background: var(--layer-agency); color: var(--layer-agency-text); }
-.activity-layer.control_plane { background: var(--layer-control); color: var(--layer-control-text); }
-.activity-layer.data_plane { background: var(--layer-data); color: var(--layer-data-text); }
-.activity-layer.ai_sandbox { background: var(--layer-sandbox); color: var(--layer-sandbox-text); }
-.activity-layer.system { background: var(--layer-system); color: var(--layer-system-text); }
+
 .activity-body { min-width: 0; }
 .activity-desc { font-size: 13px; color: var(--text-primary); line-height: 1.5; margin-bottom: 2px; }
 .activity-meta {
@@ -1758,7 +1752,7 @@ function fmtBytes(b) {
 
 function tierName(t) { return { 1: 'Public', 2: 'Internal Operational', 3: 'Restricted' }[t] || 'Unknown'; }
 function tierBadge(t) { return `<span class="badge badge-tier${t}">Tier ${t}: ${tierName(t)}</span>`; }
-function tierBadgeShort(t) { return `<span class="badge badge-tier${t}">T${t}</span>`; }
+function tierBadgeShort(t) { return `<span class="badge ">T${t}</span>`; }
 
 const STAGE_ORDER = ['request','ingestion','validation','cleaning','labeling','storage','access','model_training','deployment'];
 const STAGE_LABEL = {
