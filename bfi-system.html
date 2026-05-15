@@ -4019,7 +4019,7 @@ function renderIngestionClassificationChat(ds, opts = {}) {
     const n = normalizeThreadMessage(m);
     return n.party === 'agency' && n.proposedTier;
   });
-  const bfiCanActOnAgencyProposal = (status === 'agency_overrode') && !readOnly;
+  const bfiCanActOnAgencyProposal = ['agency_overrode', 'agency_accepted'].includes(status) && !readOnly;
   const bfiCanActOnPendingAgency = lastAgencyProposal && bfiCanActOnAgencyProposal;
 
   const disputeBanner = (status === 'disputed' && (thread.dispute_count || 0) >= 3) ? `
@@ -4175,6 +4175,7 @@ function bfiAcceptAgencyClassification(threadId, tier) {
   const thread = state.classification.find(t => t.thread_id === threadId);
   if (!thread) return;
   thread.agreed_tier = tier;
+  thread.final_tier = tier;
   thread.classification_status = 'agreed';
   thread.resolved_at = new Date().toISOString();
   thread.messages.push({

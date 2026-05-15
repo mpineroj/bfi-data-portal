@@ -1173,6 +1173,7 @@ const appState = {
   disputeCount: 0,
   editingSection: null,
   sidebarOpen: true,
+  agencyProposeOpen: false,
   bfiProposeOpen: false,
   showModal: false,
   transfer: {
@@ -1333,6 +1334,10 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 3000);
 }
 
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function tierBadge(tier) {
   const names = { 1: 'Public', 2: 'Internal Operational', 3: 'Restricted' };
   return `<span class="badge badge-tier${tier}">Tier ${tier}: ${names[tier]}</span>`;
@@ -1347,6 +1352,7 @@ function statusBadge(status) {
     'under_review': ['Under Review', 'badge-blue'],
     'bfi_proposed': ['BFI Proposed', 'badge-amber'],
     'agency_accepted': ['Agency Accepted', 'badge-green'],
+    'agency_overrode': ['Agency Proposed', 'badge-amber'],
     'disputed': ['Disputed', 'badge-red'],
     'agreed': ['Agreed', 'badge-green'],
     'finalized': ['Finalized', 'badge-gray'],
@@ -1771,6 +1777,8 @@ function renderStep3() {
   const d = s.datasetDetails;
   const a = s.agencyInfo;
   const effectiveTier = s.agencyTierDecision === 'accepted' ? s.suggestedTier : parseInt(s.agencyOverrideTier);
+  const canAgencyPropose = s.currentRole === 'agency' && !['agreed', 'finalized'].includes(s.classificationStatus);
+  const proposalDefaultTier = s.agencyOverrideTier || s.agreedTier || s.suggestedTier || effectiveTier || 2;
 
   return `
     <div class="content screen-enter">
@@ -1850,10 +1858,11 @@ function renderStep3() {
                   const align = isBfi ? 'bfi-msg' : 'agency';
                   const initials = m.author.split(' ').map(w=>w[0]).join('').substring(0,2);
                   let actions = '';
-                  if (m.proposedTier && s.classificationStatus === 'bfi_proposed' && s.currentRole === 'agency') {
+                  if (m.proposedTier && isBfi && s.classificationStatus === 'bfi_proposed' && s.currentRole === 'agency') {
                     actions = `<div class="message-actions">
                       <button class="btn btn-sm btn-success" onclick="acceptClassification(${m.proposedTier})">Accept Classification</button>
                       <button class="btn btn-sm btn-danger-outline" onclick="disputeClassification()">Dispute</button>
+                      <button class="btn btn-sm btn-secondary" onclick="toggleAgencyPropose()">Propose Alternative</button>
                     </div>`;
                   }
                   return `<div class="message ${align}">
@@ -1875,6 +1884,28 @@ function renderStep3() {
                 <textarea class="form-textarea" id="threadMsg" rows="1" placeholder="Type a message..."></textarea>
                 <button class="btn btn-sm btn-primary" onclick="postComment()">Post</button>
               </div>
+              ${canAgencyPropose && s.agencyProposeOpen ? `
+              <div class="propose-form" style="margin:12px 0 0">
+                <h4>Propose Classification</h4>
+                <div class="form-group">
+                  <select class="form-select" id="agencyProposeTier">
+                    <option value="1" ${Number(proposalDefaultTier) === 1 ? 'selected' : ''}>Tier 1: Public</option>
+                    <option value="2" ${Number(proposalDefaultTier) === 2 ? 'selected' : ''}>Tier 2: Internal Operational</option>
+                    <option value="3" ${Number(proposalDefaultTier) === 3 ? 'selected' : ''}>Tier 3: Restricted</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <textarea class="form-textarea" id="agencyProposeRationale" rows="2" placeholder="Explain your proposed classification...">${esc(s.agencyOverrideRationale || '')}</textarea>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button class="btn btn-sm btn-primary" onclick="submitAgencyProposal()">Submit Proposal</button>
+                  <button class="btn btn-sm btn-secondary" onclick="toggleAgencyPropose()">Cancel</button>
+                </div>
+              </div>` : ''}
+              ${canAgencyPropose && !s.agencyProposeOpen ? `
+              <div style="margin-top:8px">
+                <button class="btn btn-sm btn-secondary" onclick="toggleAgencyPropose()">Propose Classification</button>
+              </div>` : ''}
             </div>
             <div style="padding:12px 20px;border-top:1px solid var(--border)">
               <button class="btn btn-primary" ${(s.classificationStatus === 'agreed' || s.classificationStatus === 'finalized') ? '' : 'disabled'} onclick="proceedToStep4()" style="width:100%;justify-content:center">
@@ -2965,6 +2996,35 @@ function toggleBfiPropose() {
   render();
 }
 
+function toggleAgencyPropose() {
+  appState.agencyProposeOpen = !appState.agencyProposeOpen;
+  render();
+}
+
+function submitAgencyProposal() {
+  const tier = parseInt($('#agencyProposeTier')?.value);
+  const rationale = ($('#agencyProposeRationale')?.value || '').trim();
+  if (!tier) { showToast('Pick a tier'); return; }
+  if (!rationale) { showToast('Add a rationale'); return; }
+
+  appState.agencyOverrideTier = tier;
+  appState.agencyOverrideRationale = rationale;
+  appState.agencyTierDecision = tier === appState.suggestedTier ? 'accepted' : 'overridden';
+  appState.classificationStatus = tier === appState.suggestedTier ? 'agency_accepted' : 'agency_overrode';
+  appState.agencyProposeOpen = false;
+  appState.discussionThread.push({
+    author: appState.agencyInfo.primaryName || 'Agency User',
+    role: 'agency',
+    roleLabel: `Data Owner, ${appState.agencyInfo.agencyName || 'City of San Antonio'}`,
+    timestamp: nowTimestamp(),
+    text: `Agency proposes Tier ${tier}: ${tierName(tier)}. ${rationale}`,
+    proposedTier: tier
+  });
+  appState.notifications.unshift({ id: Date.now(), icon: '💬', text: `Agency proposed Tier ${tier} classification for '${appState.datasetDetails.name || 'Untitled Dataset'}'.`, time: 'Just now', read: false });
+  writeSharedClassificationThread();
+  render();
+}
+
 function submitProposal() {
   const tier = parseInt($('#proposeTier')?.value);
   const rationale = $('#proposeRationale')?.value || '';
@@ -3324,6 +3384,7 @@ function submitAnother() {
   appState.submitted = false;
   appState.disputeCount = 0;
   appState.editingSection = null;
+  appState.agencyProposeOpen = false;
   appState.bfiProposeOpen = false;
   appState.showModal = false;
   appState.transfer = { status:'not_started',method:null,fileName:null,fileSize:null,hash:null,transferTimestamp:null,receivedTimestamp:null,verifiedTimestamp:null,verifiedBy:null,agencyConfirmation:{},secureLinkUUID:null,secureLinkToken:null,secureLinkExpiry:null,sftpCredentials:{},uploadProgress:0,uploading:false,showToken:false,showInstructions:false,verifyChecks:{} };
@@ -3388,7 +3449,6 @@ const DEMO_SOE_0045 = {
 };
 
 function seedPortalDemoIfNeeded() {
-  if (localStorage.getItem(PORTAL_SEED_KEY)) return;
   // Add pre-loaded demo datasets to the landing list so the demo has realistic context
   const existingNames = appState.datasets.map(d => d.name);
   const demoRows = [
@@ -3398,6 +3458,7 @@ function seedPortalDemoIfNeeded() {
     { id: 'SOE-0044', name: 'Housing Assistance & Income Verification Records', agency: 'City of San Antonio', tier: 3, status: 'active', transferStatus: 'verified', submitted: relDays(-11), signed: relDays(-8), expires: relDays(350), reviewer: 'Dr. James Liu', readOnly: true }
   ];
   demoRows.forEach(row => { if (!existingNames.includes(row.name)) appState.datasets.push(row); });
+  if (localStorage.getItem(PORTAL_SEED_KEY)) return;
   localStorage.setItem(PORTAL_SEED_KEY, '1');
 }
 
@@ -3531,11 +3592,12 @@ function writeSharedClassificationThread() {
     const idx = threads.findIndex(t => t.soe_id === soeId);
     const existing = idx >= 0 ? threads[idx] : {};
     const status = appState.classificationStatus;
+    const sharedTier = appState.agreedTier || (appState.agencyOverrideTier ? parseInt(appState.agencyOverrideTier) : null) || appState.suggestedTier || null;
     const thread = {
       thread_id: existing.thread_id || _classificationThreadId(soeId),
       soe_id: soeId,
       auto_suggested_tier: appState.suggestedTier || existing.auto_suggested_tier || null,
-      final_tier: status === 'finalized' ? (appState.agreedTier || (appState.agencyOverrideTier ? parseInt(appState.agencyOverrideTier) : appState.suggestedTier)) : (existing.final_tier || null),
+      final_tier: ['agreed', 'finalized'].includes(status) ? sharedTier : (existing.final_tier || null),
       agency_override: appState.agencyTierDecision === 'overridden',
       classification_status: status,
       dispute_count: appState.disputeCount || 0,
@@ -3546,9 +3608,9 @@ function writeSharedClassificationThread() {
       messages: (appState.discussionThread || []).map((m, i) => ({
         id: m.id || `MSG-${soeId}-${i}-${Math.floor(Math.random()*1000)}`,
         author: m.author,
-        role: m.role,
+        role: m.roleLabel || m.role,
         roleLabel: m.roleLabel,
-        party: m.isSystem ? 'system' : (m.role === 'bfi' ? 'bfi' : 'agency'),
+        party: m.isSystem ? 'system' : (m.party || (m.role === 'bfi' ? 'bfi' : 'agency')),
         body: m.text,
         timestamp: m.timestamp,
         proposedTier: m.proposedTier || null,
@@ -3560,6 +3622,15 @@ function writeSharedClassificationThread() {
     if (idx >= 0) threads[idx] = thread;
     else threads.push(thread);
     localStorage.setItem('thread_classification_threads', JSON.stringify(threads));
+    const datasets = JSON.parse(localStorage.getItem('thread_datasets') || '[]');
+    const ds = datasets.find(x => x.id === soeId);
+    if (ds && sharedTier) {
+      ds.tier = sharedTier;
+      ds.tier_label = tierName(sharedTier);
+      ds.classification_rationale = appState.agencyOverrideRationale || appState.tierRationale || ds.classification_rationale || '';
+      ds.updated_at = new Date().toISOString();
+      localStorage.setItem('thread_datasets', JSON.stringify(datasets));
+    }
   } catch (e) { console.warn('Thread sync write failed:', e); }
 }
 
@@ -3573,20 +3644,23 @@ function refreshClassificationFromShared() {
     appState.discussionThread = (t.messages || []).map(m => ({
       id: m.id,
       author: m.author,
-      role: m.role,
-      roleLabel: m.roleLabel,
+      role: m.party === 'bfi' ? 'bfi' : (m.party === 'system' ? 'system' : 'agency'),
+      roleLabel: m.roleLabel || m.role || '',
+      party: m.party || null,
       timestamp: m.timestamp,
-      text: m.body,
-      proposedTier: m.proposedTier || null,
-      isSystem: !!m.isSystem,
+      text: m.body != null ? m.body : (m.text || ''),
+      proposedTier: m.proposedTier || m.proposed_tier || null,
+      isSystem: !!m.isSystem || m.party === 'system',
       isPrivate: !!m.isPrivate
     }));
     if (t.classification_status) appState.classificationStatus = t.classification_status;
-    if (t.agreed_tier != null) appState.agreedTier = t.agreed_tier;
+    if (t.agreed_tier != null || t.final_tier != null) appState.agreedTier = t.agreed_tier || t.final_tier;
     if (typeof t.dispute_count === 'number') appState.disputeCount = t.dispute_count;
     if (t.agency_override_tier) appState.agencyOverrideTier = t.agency_override_tier;
     if (t.agency_override_rationale) appState.agencyOverrideRationale = t.agency_override_rationale;
     if (t.agency_tier_decision === 'overrode') appState.agencyTierDecision = 'overridden';
+    if (t.agency_tier_decision === 'accepted') appState.agencyTierDecision = 'accepted';
+    appState.agencyProposeOpen = false;
   } catch (e) { console.warn('Thread sync read failed:', e); }
 }
 
@@ -3597,7 +3671,7 @@ function resetDemoData() {
     'thread_custody_receipts', 'thread_classification_threads', 'thread_validation_reports',
     'thread_transformation_ops', 'thread_training_authorizations', 'thread_models',
     'thread_onboarding_progress', 'thread_agency_notifications', 'thread_initialized',
-    'thread_bfi_seeded_v1', 'thread_bfi_seeded_v2', 'thread_bfi_seeded_v3',
+    'thread_bfi_seeded_v1', 'thread_bfi_seeded_v2', 'thread_bfi_seeded_v3', 'thread_bfi_seeded_v4',
     'thread_portal_seeded_v1', 'thread_portal_state', 'thread_portal_session'
   ];
   keys.forEach(k => localStorage.removeItem(k));
